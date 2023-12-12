@@ -1,6 +1,3 @@
-from enum import Enum
-
-
 class PieceException(Exception):
     def __init__(self, message) -> None:
         self.message = message

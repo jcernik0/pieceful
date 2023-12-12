@@ -7,7 +7,9 @@ from ._depends import Depends
 from . import exc
 from ._swallower import swallow_exception
 
-# from functools import partial
+from typing_extensions import ParamSpec
+
+P = ParamSpec("P")
 T = t.TypeVar("T")
 
 
@@ -90,13 +92,13 @@ def _find_existing_component(
 
 
 def _get_instantiation_args(
-    cls: type,
+    inspectable: t.Callable[..., t.Any],
     params: dict[str, t.Any],
     param_transformer: t.Callable[[str, type], t.Any],
 ) -> dict[str, t.Any]:
     instantiation_args: dict[str, t.Any] = {}
 
-    for param_name, param in inspect.signature(cls).parameters.items():
+    for param_name, param in inspect.signature(inspectable).parameters.items():
         if param_name in params:
             instantiation_args[param_name] = params[param_name]
             continue
@@ -111,6 +113,17 @@ def _get_instantiation_args(
         )
 
     return instantiation_args
+
+
+def _check_duplicates(piece_name: str, piece_type: type):
+    if piece_type in _register[piece_name]:
+        raise exc.AmbiguousPieceException(
+            f"Piece `{piece_name}` of type `{piece_type}` already registered"
+        )
+    if piece_type in _pieces[piece_name]:
+        raise exc.AmbiguousPieceException(
+            f"Piece `{piece_name}` of type `{piece_type}` already instantiated"
+        )
 
 
 class Piece:
@@ -137,14 +150,7 @@ class Piece:
             raise exc.PieceException(
                 f"Wrong usage of @{self.__class__.__name__}. Must be used on class. `{cls.__name__}` is not a class."
             )
-        if cls in _register[self.name]:
-            raise exc.AmbiguousPieceException(
-                f"Piece `{self.name}` of type `{cls}` already registered"
-            )
-        if cls in _pieces[self.name]:
-            raise exc.AmbiguousPieceException(
-                f"Piece `{self.name}` of type `{cls}` already instantiated"
-            )
+        _check_duplicates(self.name, cls)
 
         if self.strategy == PieceStrategy.EAGER:
             self.run_eager(cls)
@@ -166,6 +172,19 @@ class Piece:
             lambda c_name, c_type: _find_existing_component(c_name, c_type, _pieces),
         )
         _pieces[self.name][cls] = cls(**args)
+
+
+def PieceFactory(fn: t.Callable[P, T]) -> t.Callable[P, T]:
+    ret_type = inspect.signature(fn).return_annotation
+    if ret_type is None:
+        raise exc.PieceException("PieceFactory function cannot return None")
+
+    _check_duplicates(fn.__name__, ret_type)
+
+    args = _get_instantiation_args(fn, dict(), Depends)
+    _register[fn.__name__][ret_type] = args
+
+    return fn
 
 
 def _save_piece(piece_name: str, piece: object):
