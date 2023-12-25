@@ -4,18 +4,19 @@ from collections import defaultdict
 from enum import Enum, auto
 
 from ._depends import Depends
+from ._entity import Initializer
 from . import exc
-from ._swallower import swallow_exception
 
 from typing_extensions import ParamSpec
 
 P = ParamSpec("P")
 T = t.TypeVar("T")
+V = t.TypeVar("V")
 
 
-_pieces: dict[str, dict[type, object]] = defaultdict(dict)
+_pieces: dict[str, dict[type, t.Any]] = defaultdict(dict)
 
-_register: dict[str, dict[type, dict[str, t.Any]]] = defaultdict(dict)
+_register: dict[str, dict[type, Initializer[t.Any]]] = defaultdict(dict)
 
 annot_type = type(t.Annotated[str, "type"])
 
@@ -66,20 +67,14 @@ def _parse_annotation(param_name: str, type_hint: t.Any) -> tuple[str, type]:
 def _find_existing_component(
     piece_name: str,
     piece_type: t.Type[T],
-    storage: dict[str, dict[type, t.Any]],
-) -> tuple[t.Type[T], t.Any]:
+    matching_fn: t.Callable[[str, t.Type[T]], list[V]],
+) -> V:
+    # TODO
     not_found_error = exc.PieceNotFound(
         f"Missing component `{piece_name}` of type {piece_type.__name__}"
     )
 
-    if piece_name not in storage:
-        raise not_found_error
-
-    found: list[tuple[t.Type[T], t.Any]] = [
-        (_cls, _obj)
-        for _cls, _obj in storage[piece_name].items()
-        if issubclass(_cls, piece_type)
-    ]
+    found = matching_fn(piece_name, piece_type)
 
     if len(found) == 0:
         raise not_found_error
@@ -89,6 +84,54 @@ def _find_existing_component(
             f"Found total {len(found)} components of subclass `{piece_type.__name__}` with name `{piece_name}`"
         )
     return found[0]
+
+
+def _match_in_pieces(
+    piece_name: str,
+    piece_type: t.Type[T],
+) -> list[tuple[t.Type[T], T]]:
+    if piece_name not in _pieces:
+        raise exc.PieceNotFound(
+            f"Missing component `{piece_name}` of type {piece_type.__name__}"
+        )
+
+    found: list[tuple[t.Type[T], T]] = [
+        (_cls, _obj)
+        for _cls, _obj in _pieces[piece_name].items()
+        if issubclass(_cls, piece_type)
+    ]
+
+    return found
+
+
+def _match_in_register(
+    piece_name: str, piece_type: t.Type[T]
+) -> list[tuple[t.Type[T], Initializer[T]]]:
+    if piece_name not in _pieces:
+        raise exc.PieceNotFound(
+            f"Missing component `{piece_name}` of type {piece_type.__name__}"
+        )
+
+    found: list[tuple[t.Type[T], Initializer[T]]] = [
+        (_cls, _obj)
+        for _cls, _obj in _register[piece_name].items()
+        if issubclass(_cls, piece_type)
+    ]
+
+    return found
+
+
+def find_existing_piece(
+    piece_name: str,
+    piece_type: t.Type[T],
+) -> tuple[t.Type[T], T]:
+    return _find_existing_component(piece_name, piece_type, _match_in_pieces)
+
+
+def find_existing_register(
+    piece_name: str, piece_type: t.Type[T]
+) -> tuple[t.Type[T], Initializer[T]]:
+    return _find_existing_component(piece_name, piece_type, _match_in_register)
 
 
 def _get_instantiation_args(
@@ -163,26 +206,28 @@ class Piece:
 
     def run_lazy(self, cls):
         args = _get_instantiation_args(cls, self.params, Depends)
-        _register[self.name][cls] = args
+        _register[self.name][cls] = Initializer(cls, args)
 
     def run_eager(self, cls):
         args = _get_instantiation_args(
             cls,
             self.params,
-            lambda c_name, c_type: _find_existing_component(c_name, c_type, _pieces),
+            lambda c_name, c_type: find_existing_piece(c_name, c_type),
         )
         _pieces[self.name][cls] = cls(**args)
 
 
 def PieceFactory(fn: t.Callable[P, T]) -> t.Callable[P, T]:
     ret_type = inspect.signature(fn).return_annotation
-    if ret_type is None:
-        raise exc.PieceException("PieceFactory function cannot return None")
+    if ret_type is None or ret_type is inspect._empty:
+        raise exc.PieceException(
+            f"PieceFactory function '{fn.__name__}' cannot have empty return"
+        )
 
     _check_duplicates(fn.__name__, ret_type)
 
     args = _get_instantiation_args(fn, dict(), Depends)
-    _register[fn.__name__][ret_type] = args
+    _register[fn.__name__][ret_type] = Initializer(fn, args)
 
     return fn
 
@@ -199,18 +244,20 @@ def _save_piece(piece_name: str, piece: object):
 
 def get_piece(piece_name: str, piece_type: t.Type[T]) -> T:
     try:
-        return _find_existing_component(piece_name, piece_type, _pieces)[1]
+        return find_existing_piece(piece_name, piece_type)[1]
     except exc.PieceException:
         pass
 
     # _find_existing_component can be split to two functions
-    cls, params = _find_existing_component(piece_name, piece_type, _register)
+    initializer: Initializer[T] = find_existing_register(piece_name, piece_type)[1]
 
-    for param_name, param_val in params.items():
+    for param_name, param_val in initializer.args.items():
         if isinstance(param_val, Depends):
-            params[param_name] = get_piece(param_val.name, param_val.component_type)
+            initializer.args[param_name] = get_piece(
+                param_val.name, param_val.component_type
+            )
 
-    piece = cls(**params)
+    piece = initializer.initialize()
     _save_piece(piece_name, piece)
 
     if piece.__class__ is piece_type:

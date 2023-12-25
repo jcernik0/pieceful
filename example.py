@@ -1,7 +1,7 @@
 import typing as t
 from abc import ABC, abstractmethod
 
-from pieceful import Piece, get_piece, inject_pieces
+from pieceful import Piece, get_piece
 
 
 class AbstractEngine(ABC):
@@ -61,8 +61,8 @@ class Car(AbstractVehicle):
         print(f"Car with {self.wheels} wheels started")
 
 
-@inject_pieces
-def main(car: t.Annotated[AbstractVehicle, "car"]):
+def main():
+    car = get_piece("car", Car)
     car.start()
 
 

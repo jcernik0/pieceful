@@ -1,15 +1,17 @@
-from pieceful._swallower import swallow_exception
-from pieceful import PieceException
-from pieceful._components import _find_existing_component
+from pieceful import PieceException, PieceFactory, get_piece
+
+from example import AbstractVehicle
 
 
-import inspect
+class Car(AbstractVehicle):
+    def start(self) -> None:
+        print("car started")
 
 
-def my_func(a: int) -> float:
-    return 1.1
+@PieceFactory
+def car_factory() -> AbstractVehicle:
+    return Car()
 
 
-sig = inspect.signature(my_func)
-
-print()
+car = get_piece("car_factory", AbstractVehicle)
+print(car.__class__)

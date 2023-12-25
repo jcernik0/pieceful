@@ -1,6 +1,7 @@
 from typing import Annotated, Protocol, runtime_checkable
 import pytest
 from pieceful import Piece, get_piece, PieceFactory
+from pieceful._entity import Initializer
 from pieceful._components import _register, _pieces
 from pieceful.exc import (
     AmbiguousPieceException,
@@ -57,7 +58,7 @@ def test_lazy_exists_in_pieces_after_instantiation(
     piece_name: str = decorate_lazy_engine.name
     piece_type: type = decorate_lazy_engine.type
 
-    assert isinstance(_register[piece_name][piece_type], dict)
+    assert isinstance(_register[piece_name][piece_type], Initializer)
     assert piece_type not in _pieces[piece_name]
 
     piece = get_piece(piece_name, piece_type)
@@ -287,5 +288,4 @@ def test_piece_factory_inversion_return_error(
     def car_from_factory(engine: decorate_lazy_engine.annotation) -> AbstractVehicle:
         return Car(engine)
 
-    with pytest.raises(TypeError):
-        get_piece(car_from_factory.__name__, AbstractVehicle)
+    assert get_piece("car_from_factory", AbstractVehicle).__class__ is Car
