@@ -1,4 +1,4 @@
-from pieceful import PieceException, PieceFactory, get_piece
+from pieceful import PieceFactory, get_piece
 
 from example import AbstractVehicle
 

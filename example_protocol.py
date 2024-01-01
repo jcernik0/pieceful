@@ -20,11 +20,3 @@ class Logger:
 class Controller:
     def __init__(self, logger: Annotated[LoggerProtocol, "logger"]):
         self.logger = logger
-
-
-@pieceful.inject_pieces
-def main(c: Annotated[Controller, "cont"]):
-    c.logger.log("hello world")
-
-
-main()

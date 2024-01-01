@@ -137,28 +137,45 @@ Car with 4 wheels started
 ``` 
 > To repeat again, `Car` depends on abstract concepts, so both `GoodDriver` and `LazyDriver` match type `AbstractDriver` and can be injected as a `driver` parameter to `Car` constructor.
 
-Let's take it one step further and discover `@inject_pieces` annotation. `@inject_pieces` decorator decorates a callable and creates `functools.partial` with that has bound arguments to specified dependencies.
-
-This way we can redefine our `main` function:
+## @PieceFactory decorator
+Another way to create dependencies is to use _function_ that returns desired object. Let's use `AbstractVehicle` class already defined. See example below:
 ```python
-@inject_pieces
-def main(car: t.Annotated[AbstractVehicle, "car"]):
-    car.start()
+class Car(AbstractVehicle):
+    def start(self) -> None:
+        print("car started")
 
-if __name__ == "__main__":
-    main()
+@PieceFactory
+def pretty_car() -> AbstractVehicle:
+    print("pretty car is being created")
+    return Car()
 ```
-This way `car` reference is injected and bound to the function with help of `functools.partial`. `main` should be then used without arguments, because the `car` is auto bound to dependency.
 
-
-If there will be scenario, where function has more parameters than just `@Piece` dependencies, the function should be used this way.
+Function `car_factory` behaves as an initializer for object of type `AbstractVehicle`. Remember, that dependency is registered with the name matching name of initialization function, which is `"pretty_car"`. This way, we can inject `"pretty_car"` piece where needed using `typing.Annotation` or obtain object reference by using:
 
 ```python
-@inject_pieces
-def main(test: str, car: t.Annotated[AbstractVehicle, "car"]):
-    car.start()
-    print(text)
-
-if __name__ == "__main__":
-    main("hello world")
+pc = get_piece("pretty_car", AbstractVehicle)
 ```
+
+## Eager vs. Lazy initialization
+Library allows to choose from two strategies of object initialization. Strategy can be specified when decorating class with `@Piece` with help of enum type: `PieceStrategy`.
+
+```python
+from pieceful import Piece, PieceStrategy
+
+@Piece("foo", strategy=PieceStrategy.EAGER)
+class Foo:
+    pass
+
+@Piece("bar", strategy=PieceStrategy.LAZY)
+class Bar:
+    pass
+```
+
+LAZY:\
+Object is initialized right when its needed for the first time. This means object is obtained by `get_piece` function or is injected to the component that is being initialized. Approach with `@PieceFactory` supports only lazy instantiation.
+
+EAGER:\
+Object is initialized at the same time interpreter reads class definition (decorated with `@Piece`). This approach is not recommended because it's more tricky to understand when object is created inside library and depends on the order of imports.
+> Think that if we import module in other file, code of whole module is executed and this way also `@Piece` object is also created in library storage.
+
+If strategy is not sopecified, default is __LAZY__ since this is more safe option. Also when decorated many dependencies with EAGER strategies, all initializations may have impact on performance, because dependencies are created usually at application startup (usually, because for example with `importlib` behavior can be different).

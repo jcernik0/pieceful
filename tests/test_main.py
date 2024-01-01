@@ -289,3 +289,25 @@ def test_piece_factory_inversion_return_error(
         return Car(engine)
 
     assert get_piece("car_from_factory", AbstractVehicle).__class__ is Car
+
+
+def test_piece_factory_injected(refresh_after):
+    class PowerfulEngine(AbstractEngine):
+        pass
+
+    @PieceFactory
+    def powerful_engine() -> AbstractEngine:
+        return PowerfulEngine()
+
+    @Piece("car")
+    class Car(AbstractVehicle):
+        def __init__(
+            self, engine: Annotated[AbstractEngine, "powerful_engine"]
+        ) -> None:
+            super().__init__()
+            self.engine = engine
+
+    c = get_piece("car", AbstractVehicle)
+
+    assert c.__class__ is Car
+    assert c.engine.__class__ is PowerfulEngine
