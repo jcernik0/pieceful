@@ -1,6 +1,7 @@
 # ruff: noqa
 
 from random import randint
+import time
 from typing import Annotated, Protocol, runtime_checkable
 
 import pytest
@@ -16,6 +17,7 @@ from pieceful import (
     get_piece,
     Scope,
     PieceIncorrectUseException,
+    register_piece,
 )
 from pieceful.core import PieceData
 from pieceful.registry import registry
@@ -320,25 +322,23 @@ def test_piece_factory_injected(refresh_after):
 def test_original_scope_different_instances(refresh_after):
     @Piece("engine", scope=Scope.ORIGINAL)
     class Engine(AbstractEngine):
-        pass
+        def __init__(self, created: Annotated[int, time.perf_counter_ns]):
+            self.created = created
 
-    engine = get_piece("engine", AbstractEngine)
-    engine2 = get_piece("engine", AbstractEngine)
+    engines = set((get_piece("engine", Engine) for _ in range(10)))
 
-    assert engine.__class__ is Engine
-    assert engine2.__class__ is Engine
-    assert engine2 is not engine
+    assert len(engines) == 10
 
 
-def test_universal_scope_different_instances(refresh_after):
+def test_universal_scope_same_instances(refresh_after):
     @Piece("engine", scope=Scope.UNIVERSAL)
     class Engine(AbstractEngine):
-        pass
+        def __init__(self, created: Annotated[int, time.perf_counter_ns]):
+            self.created = created
 
-    engine = get_piece("engine", AbstractEngine)
-    engine2 = get_piece("engine", AbstractEngine)
+    engines = set(get_piece("engine", Engine) for _ in range(10))
 
-    assert engine2 is engine
+    assert len(engines) == 1
 
 
 def test_universal_scope_different_instances_with_factory(refresh_after):
@@ -435,3 +435,30 @@ def test_piece_with_default_factory_parameter_instantiation(refresh_after):
     assert engine.power == random_power
     assert len(tracker) == 1
     assert tracker[0] == random_power
+
+
+def test_register_supertype_when_subtype_registered(refresh_after):
+    class Engine:
+        pass
+
+    @Piece("engine")
+    class PowerfulEngine(Engine):
+        pass
+
+    register_piece(Engine, "engine")
+
+    assert get_piece("engine", Engine).__class__ is Engine
+    assert get_piece("engine", PowerfulEngine).__class__ is PowerfulEngine
+
+
+def test_register_subtype_when_supertype_registered(refresh_after):
+    @Piece("engine")
+    class Engine:
+        pass
+
+    @Piece("engine")
+    class PowerfulEngine(Engine):
+        pass
+
+    assert get_piece("engine", Engine).__class__ is Engine
+    assert get_piece("engine", PowerfulEngine).__class__ is PowerfulEngine
