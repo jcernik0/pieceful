@@ -19,16 +19,21 @@ class Registry:
         self.registry: Storage = defaultdict(dict)
 
     def add(self, piece_name: str, piece_data: PieceData[Any]):
-        if self._get_piece_data(piece_name, piece_data.type):
+        piece_dict = self.registry[piece_name]
+
+        if piece_data.type in piece_dict:
             raise AmbiguousPieceException(
                 f"Piece {piece_data.type} is already registered as a subclass of {piece_data.type}."
             )
 
-        self.registry[piece_name][piece_data.type] = piece_data
+        piece_dict[piece_data.type] = piece_data
 
     def _get_piece_data(
         self, piece_name: str, piece_type: Type[_T]
     ) -> PieceData[_T] | None:
+        if (pd := self.registry[piece_name].get(piece_type)) is not None:
+            return pd
+
         for type_, pd in self.registry[piece_name].items():
             if issubclass(type_, piece_type):
                 return pd
