@@ -29,10 +29,7 @@ def create_default_factory_parameter(name: str, factory: Callable[[], Any]):
 
 
 def evaluate_forward_ref(fr: ForwardRef, globals_dict: dict[str, Any]) -> Any:
-    try:
-        return fr._evaluate(globals_dict, {}, frozenset())
-    except Exception as e:
-        raise PieceException(f"Cannot evaluate forward reference: `{fr}`") from e
+    raise PieceException("ForwardRef is not supported")
 
 
 def count_non_default_parameters(fn) -> int:
