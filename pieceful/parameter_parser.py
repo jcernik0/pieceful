@@ -33,9 +33,14 @@ def evaluate_forward_ref(fr: ForwardRef, globals_dict: dict[str, Any]) -> Any:
 
 
 def count_non_default_parameters(fn) -> int:
+    try:
+        parameters = inspect.signature(fn).parameters.values()
+    except ValueError:
+        parameters = tuple()
+
     filtered = filter(
         lambda p: p.default is inspect.Parameter.empty,
-        inspect.signature(fn).parameters.values(),
+        parameters,
     )
     return sum(1 for _ in filtered)
 
